@@ -3,8 +3,8 @@ package com.xchen.nav.function;
 import com.xchen.nav.conf.IgniteConfig;
 import com.xchen.nav.model.TradeOrder;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.functions.RichMapFunction;
-import org.apache.flink.configuration.Configuration;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.table.KeyValueView;
 import org.apache.ignite.table.Tuple;
@@ -19,7 +19,7 @@ public class PositionUpdater extends RichMapFunction<TradeOrder, Void> {
     private transient KeyValueView<Tuple, Tuple> positionsView;
 
     @Override
-    public void open(Configuration parameters) {
+    public void open(OpenContext openContext) {
         igniteClient = IgniteClient.builder().addresses(IgniteConfig.IGNITE_HOST + ":" + IgniteConfig.IGNITE_PORT).build();
         positionsView = igniteClient.tables().table(IgniteConfig.POSITIONS_TABLE).keyValueView();
 
@@ -33,8 +33,8 @@ public class PositionUpdater extends RichMapFunction<TradeOrder, Void> {
         // Atomically update the position
         Tuple current = positionsView.get(null, key);
         int currentQuantity = 0;
-        if (current != null && current.value("quantity") != null) {
-            currentQuantity = current.value("quantity");
+        if (current != null) {
+            currentQuantity = current.valueOrDefault("quantity", 0);
         }
         int newQuantity = currentQuantity + order.getQuantity();
         positionsView.put(null, key, Tuple.create().set("quantity", newQuantity));

@@ -3,8 +3,8 @@ package com.xchen.nav.function;
 import com.xchen.nav.conf.IgniteConfig;
 import com.xchen.nav.model.MarketData;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.functions.RichMapFunction;
-import org.apache.flink.configuration.Configuration;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Tuple;
@@ -19,13 +19,13 @@ import java.math.RoundingMode;
 public class NavCalculator extends RichMapFunction<MarketData, String> {
 
     private transient IgniteClient igniteClient;
-    private transient RecordView<Tuple> pricesView;
+    private transient RecordView<Tuple> marketView;
     private transient RecordView<Tuple> positionsView;
 
     @Override
-    public void open(Configuration parameters) {
+    public void open(OpenContext openContext) {
         igniteClient = IgniteClient.builder().addresses(IgniteConfig.IGNITE_HOST + ":" + IgniteConfig.IGNITE_PORT).build();
-        pricesView = igniteClient.tables().table(IgniteConfig.PRICES_TABLE).recordView();
+        marketView = igniteClient.tables().table(IgniteConfig.MARKET_TABLE).recordView();
         positionsView = igniteClient.tables().table(IgniteConfig.POSITIONS_TABLE).recordView();
     }
 
@@ -36,13 +36,12 @@ public class NavCalculator extends RichMapFunction<MarketData, String> {
                 .set("stockSymbol", data.getStockSymbol())
                 .set("price", data.getPrice())
                 .set("lastUpdateTime", data.getTimestamp());
-        pricesView.upsert(null, priceRecord);
+        marketView.upsert(null, priceRecord);
 
         // 2. Calculate NAV for FUND-A
         BigDecimal totalNav = BigDecimal.ZERO;
         // In a real system, you'd iterate over all funds. Here we hardcode for the demo.
-        positionsView.getAll()
-        try (var cursor = positionsView.scan(null, null)) {
+        try (var cursor = positionsView.query(null, null)) {
             while (cursor.hasNext()) {
                 Tuple position = cursor.next();
                 if ("FUND-A".equals(position.stringValue("fundId"))) {
@@ -51,7 +50,7 @@ public class NavCalculator extends RichMapFunction<MarketData, String> {
 
                     // Get the latest price for this stock
                     Tuple priceKey = Tuple.create().set("stockSymbol", symbol);
-                    Tuple latestPrice = pricesView.get(null, priceKey);
+                    Tuple latestPrice = marketView.get(null, priceKey);
 
                     if (latestPrice != null) {
                         double price = latestPrice.doubleValue("price");
